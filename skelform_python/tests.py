@@ -56,9 +56,44 @@ def forward_reaching(bones, ik_families):
             print(f"{next_pos.x:.2f}", f"{next_pos.y:.2f}")
 
 
+def backward_reaching(bones, ik_families, root):
+    for family in ik_families:
+        if family.target_id == -1:
+            continue
+        next_pos = root
+        next_length = 0
+        for i in range(len(family.bone_ids)):
+            length = skelform_python.Vec2(0, 0)
+            if i != 0:
+                length = skelform_python.normalize(
+                    skelform_python.vec_sub(next_pos, bones[family.bone_ids[i]].pos)
+                )
+                length.x *= next_length
+                length.y *= next_length
+
+            if i != len(family.bone_ids) - 1:
+                next_bone = bones[family.bone_ids[i + 1]]
+                next_length = skelform_python.magnitude(
+                    skelform_python.vec_sub(
+                        bones[family.bone_ids[i]].pos, next_bone.pos
+                    )
+                )
+
+            bones[family.bone_ids[i]].pos = skelform_python.vec_sub(next_pos, length)
+            next_pos = bones[family.bone_ids[i]].pos
+            # print(f"{next_pos.x:.2f}", f"{next_pos.y:.2f}")
+            print(f"{next_pos.x:.2f}", f"{next_pos.y:.2f}")
+
+
 armature = setup_armature()
+
+root = armature.bones[armature.ik_families[0].bone_ids[0]].pos
 
 print()
 print("forward reaching:")
 forward_reaching(armature.bones, armature.ik_families)
+print()
+
+print("backward reaching:")
+backward_reaching(armature.bones, armature.ik_families, root)
 print()

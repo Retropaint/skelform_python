@@ -62,8 +62,8 @@ def inheritance(bones, ik_rots):
             bone.pos.x += parent.pos.x
             bone.pos.y += parent.pos.y
 
-        if len(ik_rots) and ik_rots[bone.id]:
-            bone.id.rot = ik_rots[bone.id]
+        if bone.id in ik_rots:
+            bone.rot = ik_rots[bone.id]
 
     return bones
 
@@ -85,27 +85,91 @@ def vec_sub(vec1, vec2):
     return SimpleNamespace(x=vec1.x - vec2.x, y=vec1.y - vec2.y)
 
 
-def inverse_kinematics(bones, families):
+def vec_add(vec1, vec2):
+    return SimpleNamespace(x=vec1.x + vec2.x, y=vec1.y + vec2.y)
+
+
+def inverse_kinematics(bones, ik_families, reverse_constraints):
     ik_rots = {}
 
-    for family in families:
+    for family in ik_families:
         if family.target_id == -1:
             continue
+
+        start_pos = copy.deepcopy(bones[family.bone_ids[0]].pos)
+        base_line = normalize(vec_sub(bones[family.target_id].pos, start_pos))
+        base_angle = math.atan2(base_line.y, base_line.x)
+
         next_pos = bones[family.target_id].pos
         next_length = 0
-        for i in range(len(family.bone_ids)):
+        for i in range(len(family.bone_ids) - 1, -1, -1):
             length = Vec2(0, 0)
             if i != len(family.bone_ids) - 1:
-                length = (
-                    normalize(next_pos - bones[family.bone_ids[i]].pos) * next_length
-                )
+                length = normalize(vec_sub(next_pos, bones[family.bone_ids[i]].pos))
+                length.x *= next_length
+                length.y *= next_length
 
             if i != 0:
                 next_bone = bones[family.bone_ids[i - 1]]
-                next_length = magnitude(bones[family.bone_ids[i]] - next_bone.pos)
+                next_length = magnitude(
+                    vec_sub(bones[family.bone_ids[i]].pos, next_bone.pos)
+                )
 
-            bones[family.bone_ids[i]].pos = next_pos - length
+            bones[family.bone_ids[i]].pos = vec_sub(next_pos, length)
             next_pos = bones[family.bone_ids[i]].pos
+
+        prev_pos = start_pos
+        prev_length = 0
+        for i in range(len(family.bone_ids)):
+            length = Vec2(0, 0)
+            if i != 0:
+                length = normalize(vec_sub(prev_pos, bones[family.bone_ids[i]].pos))
+                length.x *= prev_length
+                length.y *= prev_length
+
+            if i != len(family.bone_ids) - 1:
+                prev_bone = bones[family.bone_ids[i + 1]]
+                prev_length = magnitude(
+                    vec_sub(bones[family.bone_ids[i]].pos, prev_bone.pos)
+                )
+
+            bones[family.bone_ids[i]].pos = vec_sub(prev_pos, length)
+
+            if i != 0 and i != len(family.bone_ids) - 1 and family.constraint != "None":
+                joint_line = normalize(vec_sub(prev_pos, bones[family.bone_ids[i]].pos))
+                joint_angle = math.atan2(joint_line.y, joint_line.x) - base_angle
+
+                constraint_min = 0
+                constraint_max = 0
+                if not reverse_constraints:
+                    if family.constraint == "Clockwise":
+                        constraint_min = -3.14
+                    else:
+                        constraint_max = 3.14
+                else:
+                    if family.constraint == "Clockwise":
+                        constraint_max = 3.14
+                    else:
+                        constraint_min = -3.14
+
+                if joint_angle > constraint_max or joint_angle < constraint_min:
+                    push_angle = -joint_angle * 2
+                    new_point = rotate(
+                        vec_sub(bones[family.bone_ids[i]].pos, prev_pos),
+                        push_angle,
+                    )
+                    bones[family.bone_ids[i]].pos = vec_add(new_point, prev_pos)
+
+            prev_pos = bones[family.bone_ids[i]].pos
+
+        end_bone = bones[family.bone_ids[-1]].pos
+        tip_pos = end_bone
+        for i in range(len(family.bone_ids) - 1, -1, -1):
+            if i == len(family.bone_ids) - 1:
+                continue
+            dir = vec_sub(tip_pos, bones[family.bone_ids[i]].pos)
+            tip_pos = bones[family.bone_ids[i]].pos
+            ik_rots[family.bone_ids[i]] = math.atan2(dir.y, dir.x)
 
     return ik_rots
 
@@ -117,11 +181,11 @@ def animate_float(keyframes, frame, bone_id, element, default):
     for kf in keyframes:
         if kf.frame > frame:
             break
-        elif kf.bone_id == bone_id and kf.element == element:
+        elif kf.bone_id == bone_id and kf._element == element:
             prev_kf = kf
 
     for kf in keyframes:
-        if kf.frame >= frame and kf.bone_id == bone_id and kf.element == element:
+        if kf.frame >= frame and kf.bone_id == bone_id and kf._element == element:
             next_kf = kf
             break
 

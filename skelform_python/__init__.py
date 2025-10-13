@@ -97,11 +97,11 @@ def animate(armature, anim_idx, frame, after_animate=None):
 
         # interpolate
         # yapf: disable
-        bone.rot     = animate_float("Rotation",  bone.rot,     keyframes, frame, bone.id)
-        bone.pos.x   = animate_float("PositionX", bone.pos.x,   keyframes, frame, bone.id)
-        bone.pos.y   = animate_float("PositionY", bone.pos.y,   keyframes, frame, bone.id)
-        bone.scale.x = animate_float("ScaleX",    bone.scale.x, keyframes, frame, bone.id)
-        bone.scale.y = animate_float("ScaleY",    bone.scale.y, keyframes, frame, bone.id)
+        bone.rot     = interpolate_keyframes("Rotation",  bone.rot,     keyframes, frame, bone.id)
+        bone.pos.x   = interpolate_keyframes("PositionX", bone.pos.x,   keyframes, frame, bone.id)
+        bone.pos.y   = interpolate_keyframes("PositionY", bone.pos.y,   keyframes, frame, bone.id)
+        bone.scale.x = interpolate_keyframes("ScaleX",    bone.scale.x, keyframes, frame, bone.id)
+        bone.scale.y = interpolate_keyframes("ScaleY",    bone.scale.y, keyframes, frame, bone.id)
 
     return bones
 
@@ -238,7 +238,7 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
     return ik_rots
 
 
-def animate_float(element, default, keyframes, frame, bone_id):
+def interpolate_keyframes(element, default, keyframes, frame, bone_id):
     prev_kf = {}
     next_kf = {}
 

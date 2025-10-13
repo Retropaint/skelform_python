@@ -270,3 +270,25 @@ def interpolate_keyframes(element, default, keyframes, frame, bone_id):
     end = next_kf.value - prev_kf.value
     result = start + (end * interp)
     return result
+
+
+def format_frame(frame, animation: Animation, reverse, loop):
+    last_kf = len(animation.keyframes) - 1
+    last_frame = animation.keyframes[last_kf].frame
+
+    if loop:
+        frame %= last_frame
+
+    if reverse:
+        frame = last_frame - frame
+
+    return int(frame)
+
+
+def time_frame(time, animation, reverse, loop):
+    frametime = 1 / animation.fps
+    frame = time / frametime
+
+    frame = format_frame(frame, animation, reverse, loop)
+
+    return int(frame)

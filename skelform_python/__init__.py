@@ -85,9 +85,9 @@ def get_frame_by_time(armature, anim_idx, elapsed, reverse):
     return frame
 
 
-def animate(armature, anim_idx, frame, after_animate=None):
+def animate(armature, animation: Animation, frame, after_animate=None):
     bones = []
-    keyframes = armature.animations[anim_idx].keyframes
+    keyframes = animation.keyframes
 
     frame %= keyframes[-1].frame
 

@@ -1,7 +1,75 @@
 import math
 import copy
 import zipfile
-from types import SimpleNamespace
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class Vec2:
+    x: float
+    y: float
+
+
+@dataclass
+class Bone:
+    _name: str
+    id: int
+    parent_id: int
+    style_ids: Optional[list[int]]
+    tex_idx: Optional[int]
+    rot: float
+    scale: Vec2
+    pos: Vec2
+    zindex: Optional[int] = 0
+
+
+@dataclass
+class IkFamily:
+    target_id: int
+    constraint: str
+    bone_ids: list[int]
+
+
+@dataclass
+class Keyframe:
+    frame: int
+    bone_id: int
+    _element: str
+    value: float
+
+
+@dataclass
+class Animation:
+    name: str
+    keyframes: list[Keyframe]
+    fps: int
+
+
+@dataclass
+class Texture:
+    _name: str
+    offset: Vec2
+    size: Vec2
+
+
+@dataclass
+class Style:
+    _name: str
+    textures: list[Texture]
+
+
+@dataclass
+class Armature:
+    bones: list[Bone]
+    animations: Optional[list[Animation]]
+    ik_families: Optional[list[IkFamily]]
+    styles: list[Style]
+
+
+@dataclass
+class SkfRoot:
+    armature: Armature
 
 
 def get_frame_by_time(armature, anim_idx, elapsed, reverse):
@@ -29,19 +97,19 @@ def animate(armature, anim_idx, frame, after_animate=None):
 
         # interpolate
         # yapf: disable
-        bone.rot     += animate_float(keyframes, frame, bone.id, "Rotation",  0)
-        bone.pos.x   += animate_float(keyframes, frame, bone.id, "PositionX", 0)
-        bone.pos.y   += animate_float(keyframes, frame, bone.id, "PositionY", 0)
-        bone.scale.x *= animate_float(keyframes, frame, bone.id, "ScaleX",    1)
-        bone.scale.y *= animate_float(keyframes, frame, bone.id, "ScaleY",    1)
+        bone.rot     = animate_float("Rotation",  bone.rot,     keyframes, frame, bone.id)
+        bone.pos.x   = animate_float("PositionX", bone.pos.x,   keyframes, frame, bone.id)
+        bone.pos.y   = animate_float("PositionY", bone.pos.y,   keyframes, frame, bone.id)
+        bone.scale.x = animate_float("ScaleX",    bone.scale.x, keyframes, frame, bone.id)
+        bone.scale.y = animate_float("ScaleY",    bone.scale.y, keyframes, frame, bone.id)
 
     return bones
 
 
-def rotate(point, rot):
-    return SimpleNamespace(
-        x=point.x * math.cos(rot) - point.y * math.sin(rot),
-        y=point.x * math.sin(rot) + point.y * math.cos(rot),
+def rotate(point: Vec2, rot: float):
+    return Vec2(
+        point.x * math.cos(rot) - point.y * math.sin(rot),
+        point.x * math.sin(rot) + point.y * math.cos(rot),
     )
 
 
@@ -68,10 +136,6 @@ def inheritance(bones, ik_rots):
     return bones
 
 
-def Vec2(x, y):
-    return SimpleNamespace(x=x, y=y)
-
-
 def magnitude(vec):
     return math.sqrt(vec.x * vec.x + vec.y * vec.y)
 
@@ -82,11 +146,11 @@ def normalize(vec):
 
 
 def vec_sub(vec1, vec2):
-    return SimpleNamespace(x=vec1.x - vec2.x, y=vec1.y - vec2.y)
+    return Vec2(vec1.x - vec2.x, vec1.y - vec2.y)
 
 
 def vec_add(vec1, vec2):
-    return SimpleNamespace(x=vec1.x + vec2.x, y=vec1.y + vec2.y)
+    return Vec2(vec1.x + vec2.x, vec1.y + vec2.y)
 
 
 def inverse_kinematics(bones, ik_families, reverse_constraints):
@@ -174,14 +238,12 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
     return ik_rots
 
 
-def animate_float(keyframes, frame, bone_id, element, default):
+def animate_float(element, default, keyframes, frame, bone_id):
     prev_kf = {}
     next_kf = {}
 
     for kf in keyframes:
-        if kf.frame > frame:
-            break
-        elif kf.bone_id == bone_id and kf._element == element:
+        if kf.frame < frame and kf.bone_id == bone_id and kf._element == element:
             prev_kf = kf
 
     for kf in keyframes:
@@ -201,7 +263,7 @@ def animate_float(keyframes, frame, bone_id, element, default):
     current_frame = frame - prev_kf.frame
 
     if total_frames == 0:
-        return prev_kf.value
+        return default
 
     interp = current_frame / total_frames
     start = prev_kf.value

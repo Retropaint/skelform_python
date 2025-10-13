@@ -85,7 +85,7 @@ def get_frame_by_time(armature, anim_idx, elapsed, reverse):
     return frame
 
 
-def animate(armature, animation: Animation, frame, after_animate=None):
+def animate(armature, animation: Animation, frame, blend_frames):
     bones = []
     keyframes = animation.keyframes
 
@@ -97,11 +97,11 @@ def animate(armature, animation: Animation, frame, after_animate=None):
 
         # interpolate
         # yapf: disable
-        bone.rot     = interpolate_keyframes("Rotation",  bone.rot,     keyframes, frame, bone.id)
-        bone.pos.x   = interpolate_keyframes("PositionX", bone.pos.x,   keyframes, frame, bone.id)
-        bone.pos.y   = interpolate_keyframes("PositionY", bone.pos.y,   keyframes, frame, bone.id)
-        bone.scale.x = interpolate_keyframes("ScaleX",    bone.scale.x, keyframes, frame, bone.id)
-        bone.scale.y = interpolate_keyframes("ScaleY",    bone.scale.y, keyframes, frame, bone.id)
+        bone.rot     = interpolate_keyframes("Rotation",  bone.rot,     keyframes, frame, bone.id, blend_frames)
+        bone.pos.x   = interpolate_keyframes("PositionX", bone.pos.x,   keyframes, frame, bone.id, blend_frames)
+        bone.pos.y   = interpolate_keyframes("PositionY", bone.pos.y,   keyframes, frame, bone.id, blend_frames)
+        bone.scale.x = interpolate_keyframes("ScaleX",    bone.scale.x, keyframes, frame, bone.id, blend_frames)
+        bone.scale.y = interpolate_keyframes("ScaleY",    bone.scale.y, keyframes, frame, bone.id, blend_frames)
 
     return bones
 
@@ -151,6 +151,10 @@ def vec_sub(vec1, vec2):
 
 def vec_add(vec1, vec2):
     return Vec2(vec1.x + vec2.x, vec1.y + vec2.y)
+
+
+def vec_mul(vec1, vec2):
+    return Vec2(vec1.x * vec2.x, vec1.y * vec2.y)
 
 
 def inverse_kinematics(bones, ik_families, reverse_constraints):
@@ -238,7 +242,7 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
     return ik_rots
 
 
-def interpolate_keyframes(element, default, keyframes, frame, bone_id):
+def interpolate_keyframes(element, default, keyframes, frame, bone_id, blend_frames):
     prev_kf = {}
     next_kf = {}
 
@@ -265,11 +269,18 @@ def interpolate_keyframes(element, default, keyframes, frame, bone_id):
     if total_frames == 0:
         return default
 
-    interp = current_frame / total_frames
-    start = prev_kf.value
-    end = next_kf.value - prev_kf.value
-    result = start + (end * interp)
-    return result
+    result = interpolate(current_frame, total_frames, prev_kf.value, next_kf.value)
+    blend = interpolate(current_frame, blend_frames, default, result)
+
+    return blend
+
+
+def interpolate(current, max, start_val, end_val):
+    if current > max or max == 0:
+        return end_val
+    interp = current / max
+    end = end_val - start_val
+    return start_val + (end * interp)
 
 
 def format_frame(frame, animation: Animation, reverse, loop):

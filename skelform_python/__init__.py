@@ -72,19 +72,6 @@ class SkfRoot:
     armature: Armature
 
 
-def get_frame_by_time(armature, anim_idx, elapsed, reverse):
-    anim = armature.animations[anim_idx]
-    last_frame = anim.keyframes[-1].frame
-
-    frametime = 1 / anim.fps
-    frame = elapsed / frametime
-
-    if reverse:
-        frame = last_frame - frame
-
-    return frame
-
-
 def animate(armature, animation: Animation, frame, blend_frames):
     bones = []
     keyframes = animation.keyframes

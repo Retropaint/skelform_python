@@ -76,8 +76,6 @@ def animate(armature, animation: Animation, frame, blend_frames):
     bones = []
     keyframes = animation.keyframes
 
-    frame %= keyframes[-1].frame
-
     for bone in armature.bones:
         bone = copy.deepcopy(bone)
         bones.append(bone)
@@ -275,7 +273,7 @@ def format_frame(frame, animation: Animation, reverse, loop):
     last_frame = animation.keyframes[last_kf].frame
 
     if loop:
-        frame %= last_frame
+        frame %= last_frame + 1
 
     if reverse:
         frame = last_frame - frame

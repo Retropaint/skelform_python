@@ -21,6 +21,9 @@ class Bone:
     rot: float
     scale: Vec2
     pos: Vec2
+    init_rot: float
+    init_scale: Vec2
+    init_pos: Vec2
     zindex: Optional[int] = 0
 
 
@@ -74,19 +77,22 @@ class SkfRoot:
 
 def animate(armature, animation: Animation, frame, blend_frames):
     bones = []
-    keyframes = animation.keyframes
+    kf = animation.keyframes
+    bf = blend_frames
+    ikf = interpolate_keyframes
 
     for bone in armature.bones:
         bone = copy.deepcopy(bone)
         bones.append(bone)
+        id = bone.id
 
         # interpolate
         # yapf: disable
-        bone.rot     = interpolate_keyframes("Rotation",  bone.rot,     keyframes, frame, bone.id, blend_frames)
-        bone.pos.x   = interpolate_keyframes("PositionX", bone.pos.x,   keyframes, frame, bone.id, blend_frames)
-        bone.pos.y   = interpolate_keyframes("PositionY", bone.pos.y,   keyframes, frame, bone.id, blend_frames)
-        bone.scale.x = interpolate_keyframes("ScaleX",    bone.scale.x, keyframes, frame, bone.id, blend_frames)
-        bone.scale.y = interpolate_keyframes("ScaleY",    bone.scale.y, keyframes, frame, bone.id, blend_frames)
+        bone.rot     = ikf("Rotation",  bone.rot,     bone.init_rot,     kf, frame, id, bf)
+        bone.pos.x   = ikf("PositionX", bone.pos.x,   bone.init_pos.x,   kf, frame, id, bf)
+        bone.pos.y   = ikf("PositionY", bone.pos.y,   bone.init_pos.y,   kf, frame, id, bf)
+        bone.scale.x = ikf("ScaleX",    bone.scale.x, bone.init_scale.x, kf, frame, id, bf)
+        bone.scale.y = ikf("ScaleY",    bone.scale.y, bone.init_scale.y, kf, frame, id, bf)
 
     return bones
 
@@ -227,7 +233,9 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
     return ik_rots
 
 
-def interpolate_keyframes(element, default, keyframes, frame, bone_id, blend_frames):
+def interpolate_keyframes(
+    element, field, default, keyframes, frame, bone_id, blend_frames
+):
     prev_kf = {}
     next_kf = {}
 
@@ -246,16 +254,13 @@ def interpolate_keyframes(element, default, keyframes, frame, bone_id, blend_fra
         next_kf = prev_kf
 
     if prev_kf == {} and next_kf == {}:
-        return default
+        return interpolate(frame, blend_frames, field, default)
 
     total_frames = next_kf.frame - prev_kf.frame
     current_frame = frame - prev_kf.frame
 
-    if total_frames == 0:
-        return default
-
     result = interpolate(current_frame, total_frames, prev_kf.value, next_kf.value)
-    blend = interpolate(current_frame, blend_frames, default, result)
+    blend = interpolate(current_frame, blend_frames, field, result)
 
     return blend
 

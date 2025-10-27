@@ -70,11 +70,6 @@ class Armature:
     styles: list[Style]
 
 
-@dataclass
-class SkfRoot:
-    armature: Armature
-
-
 def animate(armature, animation: Animation, frame, blend_frames):
     bones = []
     kf = animation.keyframes

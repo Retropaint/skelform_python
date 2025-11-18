@@ -155,41 +155,8 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
         root = copy.deepcopy(bones[family.bone_ids[0]].pos)
         target = copy.deepcopy(bones[family.target_id].pos)
 
-        # forward reaching
-        next_pos = bones[family.target_id].pos
-        next_length = 0
-        for i in range(len(family.bone_ids) - 1, -1, -1):
-            length = Vec2(0, 0)
-            if i != len(family.bone_ids) - 1:
-                length = normalize(vec_sub(next_pos, bones[family.bone_ids[i]].pos))
-                length.x *= next_length
-                length.y *= next_length
-
-            if i != 0:
-                next_bone = bones[family.bone_ids[i - 1]]
-                bone_pos = bones[family.bone_ids[i]].pos
-                next_length = magnitude(vec_sub(bone_pos, next_bone.pos))
-
-            bones[family.bone_ids[i]].pos = vec_sub(next_pos, length)
-            next_pos = bones[family.bone_ids[i]].pos
-
-        # backward reaching
-        prev_pos = root
-        prev_length = 0
-        for i in range(len(family.bone_ids)):
-            length = Vec2(0, 0)
-            if i != 0:
-                length = normalize(vec_sub(prev_pos, bones[family.bone_ids[i]].pos))
-                length.x *= prev_length
-                length.y *= prev_length
-
-            if i != len(family.bone_ids) - 1:
-                prev_bone = bones[family.bone_ids[i + 1]]
-                bone_pos = bones[family.bone_ids[i]].pos
-                prev_length = magnitude(vec_sub(bone_pos, prev_bone.pos))
-
-            bones[family.bone_ids[i]].pos = vec_sub(prev_pos, length)
-            prev_pos = bones[family.bone_ids[i]].pos
+        for i in range(10):
+            fabrik(family, bones, root, target)
 
         # setting bone rotations
         end_bone = bones[family.bone_ids[-1]].pos
@@ -215,6 +182,44 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
             ik_rots[family.bone_ids[i]] = bones[family.bone_ids[i]].rot
 
     return ik_rots
+
+
+def fabrik(family, bones, root, target):
+    # forward reaching
+    next_pos = bones[family.target_id].pos
+    next_length = 0
+    for i in range(len(family.bone_ids) - 1, -1, -1):
+        length = Vec2(0, 0)
+        if i != len(family.bone_ids) - 1:
+            length = normalize(vec_sub(next_pos, bones[family.bone_ids[i]].pos))
+            length.x *= next_length
+            length.y *= next_length
+
+        if i != 0:
+            next_bone = bones[family.bone_ids[i - 1]]
+            bone_pos = bones[family.bone_ids[i]].pos
+            next_length = magnitude(vec_sub(bone_pos, next_bone.pos))
+
+        bones[family.bone_ids[i]].pos = vec_sub(next_pos, length)
+        next_pos = bones[family.bone_ids[i]].pos
+
+    # backward reaching
+    prev_pos = root
+    prev_length = 0
+    for i in range(len(family.bone_ids)):
+        length = Vec2(0, 0)
+        if i != 0:
+            length = normalize(vec_sub(prev_pos, bones[family.bone_ids[i]].pos))
+            length.x *= prev_length
+            length.y *= prev_length
+
+        if i != len(family.bone_ids) - 1:
+            prev_bone = bones[family.bone_ids[i + 1]]
+            bone_pos = bones[family.bone_ids[i]].pos
+            prev_length = magnitude(vec_sub(bone_pos, prev_bone.pos))
+
+        bones[family.bone_ids[i]].pos = vec_sub(prev_pos, length)
+        prev_pos = bones[family.bone_ids[i]].pos
 
 
 def interpolate_keyframes(

@@ -10,6 +10,24 @@ class Vec2:
     x: float
     y: float
 
+    def __sub__(self, other):
+        return Vec2(self.x - other.x, self.y - other.y)
+
+    def __add__(self, other):
+        return Vec2(self.x + other.x, self.y + other.y)
+
+    def __mul__(self, other):
+        return Vec2(self.x * other.x, self.y * other.y)
+
+    def __isub__(self, other):
+        return self.__sub__(other)
+
+    def __iadd__(self, other):
+        return self.__add__(other)
+
+    def __imul__(self, other):
+        return self.__mul__(other)
+
 
 @dataclass
 class Bone:
@@ -106,15 +124,12 @@ def inheritance(bones, ik_rots):
             parent = bones[bone.parent_id]
 
             bone.rot += parent.rot
-            bone.scale.x *= parent.scale.x
-            bone.scale.y *= parent.scale.y
-            bone.pos.x *= parent.scale.x
-            bone.pos.y *= parent.scale.y
+            bone.scale *= parent.scale
+            bone.pos *= parent.scale
 
             bone.pos = rotate(bone.pos, parent.rot)
 
-            bone.pos.x += parent.pos.x
-            bone.pos.y += parent.pos.y
+            bone.pos += parent.pos
 
         if bone.id in ik_rots:
             bone.rot = ik_rots[bone.id]
@@ -131,18 +146,6 @@ def normalize(vec):
     if mag == 0:
         return Vec2(0, 0)
     return Vec2(vec.x / mag, vec.y / mag)
-
-
-def vec_sub(vec1, vec2):
-    return Vec2(vec1.x - vec2.x, vec1.y - vec2.y)
-
-
-def vec_add(vec1, vec2):
-    return Vec2(vec1.x + vec2.x, vec1.y + vec2.y)
-
-
-def vec_mul(vec1, vec2):
-    return Vec2(vec1.x * vec2.x, vec1.y * vec2.y)
 
 
 def inverse_kinematics(bones, ik_families, reverse_constraints):
@@ -162,13 +165,13 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
         end_bone = bones[family.bone_ids[-1]].pos
         tip_pos = end_bone
         for i in range(len(family.bone_ids) - 1, -1, -1):
-            dir = vec_sub(tip_pos, bones[family.bone_ids[i]].pos)
+            dir = tip_pos - bones[family.bone_ids[i]].pos
             tip_pos = bones[family.bone_ids[i]].pos
             bones[family.bone_ids[i]].rot = math.atan2(dir.y, dir.x)
 
         # applying constraint
-        joint_dir = normalize(vec_sub(bones[family.bone_ids[1]].pos, root))
-        base_dir = normalize(vec_sub(target, root))
+        joint_dir = normalize(bones[family.bone_ids[1]].pos - root)
+        base_dir = normalize(target - root)
         dir = joint_dir.x * base_dir.y - base_dir.x * joint_dir.y
         base_angle = math.atan2(base_dir.y, base_dir.x)
         cw = family.constraint == "Clockwise" and dir > 0
@@ -191,16 +194,16 @@ def fabrik(family, bones, root, target):
     for i in range(len(family.bone_ids) - 1, -1, -1):
         length = Vec2(0, 0)
         if i != len(family.bone_ids) - 1:
-            length = normalize(vec_sub(next_pos, bones[family.bone_ids[i]].pos))
+            length = normalize(next_pos - bones[family.bone_ids[i]].pos)
             length.x *= next_length
             length.y *= next_length
 
         if i != 0:
             next_bone = bones[family.bone_ids[i - 1]]
             bone_pos = bones[family.bone_ids[i]].pos
-            next_length = magnitude(vec_sub(bone_pos, next_bone.pos))
+            next_length = magnitude(bone_pos - next_bone.pos)
 
-        bones[family.bone_ids[i]].pos = vec_sub(next_pos, length)
+        bones[family.bone_ids[i]].pos = next_pos - length
         next_pos = bones[family.bone_ids[i]].pos
 
     # backward reaching
@@ -209,16 +212,16 @@ def fabrik(family, bones, root, target):
     for i in range(len(family.bone_ids)):
         length = Vec2(0, 0)
         if i != 0:
-            length = normalize(vec_sub(prev_pos, bones[family.bone_ids[i]].pos))
+            length = normalize(prev_pos - bones[family.bone_ids[i]].pos)
             length.x *= prev_length
             length.y *= prev_length
 
         if i != len(family.bone_ids) - 1:
             prev_bone = bones[family.bone_ids[i + 1]]
             bone_pos = bones[family.bone_ids[i]].pos
-            prev_length = magnitude(vec_sub(bone_pos, prev_bone.pos))
+            prev_length = magnitude(bone_pos - prev_bone.pos)
 
-        bones[family.bone_ids[i]].pos = vec_sub(prev_pos, length)
+        bones[family.bone_ids[i]].pos = prev_pos - length
         prev_pos = bones[family.bone_ids[i]].pos
 
 

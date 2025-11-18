@@ -31,7 +31,7 @@ class Vec2:
 
 @dataclass
 class Bone:
-    _name: str
+    name: str
     id: int
     parent_id: int
     style_ids: Optional[list[int]]
@@ -56,7 +56,7 @@ class IkFamily:
 class Keyframe:
     frame: int
     bone_id: int
-    _element: str
+    element: str
     value: float
 
 
@@ -69,14 +69,14 @@ class Animation:
 
 @dataclass
 class Texture:
-    _name: str
+    name: str
     offset: Vec2
     size: Vec2
 
 
 @dataclass
 class Style:
-    _name: str
+    name: str
     textures: list[Texture]
 
 
@@ -148,7 +148,7 @@ def normalize(vec):
     return Vec2(vec.x / mag, vec.y / mag)
 
 
-def inverse_kinematics(bones, ik_families, reverse_constraints):
+def inverse_kinematics(bones, ik_families):
     ik_rots = {}
 
     for family in ik_families:
@@ -232,11 +232,11 @@ def interpolate_keyframes(
     next_kf = {}
 
     for kf in keyframes:
-        if kf.frame < frame and kf.bone_id == bone_id and kf._element == element:
+        if kf.frame < frame and kf.bone_id == bone_id and kf.element == element:
             prev_kf = kf
 
     for kf in keyframes:
-        if kf.frame >= frame and kf.bone_id == bone_id and kf._element == element:
+        if kf.frame >= frame and kf.bone_id == bone_id and kf.element == element:
             next_kf = kf
             break
 

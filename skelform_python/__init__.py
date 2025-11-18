@@ -128,6 +128,8 @@ def magnitude(vec):
 
 def normalize(vec):
     mag = magnitude(vec)
+    if mag == 0:
+        return Vec2(0, 0)
     return Vec2(vec.x / mag, vec.y / mag)
 
 
@@ -150,10 +152,10 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
         if family.target_id == -1:
             continue
 
-        start_pos = copy.deepcopy(bones[family.bone_ids[0]].pos)
-        base_line = normalize(vec_sub(bones[family.target_id].pos, start_pos))
-        base_angle = math.atan2(base_line.y, base_line.x)
+        root = copy.deepcopy(bones[family.bone_ids[0]].pos)
+        target = copy.deepcopy(bones[family.target_id].pos)
 
+        # forward reaching
         next_pos = bones[family.target_id].pos
         next_length = 0
         for i in range(len(family.bone_ids) - 1, -1, -1):
@@ -165,14 +167,14 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
 
             if i != 0:
                 next_bone = bones[family.bone_ids[i - 1]]
-                next_length = magnitude(
-                    vec_sub(bones[family.bone_ids[i]].pos, next_bone.pos)
-                )
+                bone_pos = bones[family.bone_ids[i]].pos
+                next_length = magnitude(vec_sub(bone_pos, next_bone.pos))
 
             bones[family.bone_ids[i]].pos = vec_sub(next_pos, length)
             next_pos = bones[family.bone_ids[i]].pos
 
-        prev_pos = start_pos
+        # backward reaching
+        prev_pos = root
         prev_length = 0
         for i in range(len(family.bone_ids)):
             length = Vec2(0, 0)
@@ -183,47 +185,34 @@ def inverse_kinematics(bones, ik_families, reverse_constraints):
 
             if i != len(family.bone_ids) - 1:
                 prev_bone = bones[family.bone_ids[i + 1]]
-                prev_length = magnitude(
-                    vec_sub(bones[family.bone_ids[i]].pos, prev_bone.pos)
-                )
+                bone_pos = bones[family.bone_ids[i]].pos
+                prev_length = magnitude(vec_sub(bone_pos, prev_bone.pos))
 
             bones[family.bone_ids[i]].pos = vec_sub(prev_pos, length)
-
-            if i != 0 and i != len(family.bone_ids) - 1 and family.constraint != "None":
-                joint_line = normalize(vec_sub(prev_pos, bones[family.bone_ids[i]].pos))
-                joint_angle = math.atan2(joint_line.y, joint_line.x) - base_angle
-
-                constraint_min = 0
-                constraint_max = 0
-                if not reverse_constraints:
-                    if family.constraint == "Clockwise":
-                        constraint_min = -3.14
-                    else:
-                        constraint_max = 3.14
-                else:
-                    if family.constraint == "Clockwise":
-                        constraint_max = 3.14
-                    else:
-                        constraint_min = -3.14
-
-                if joint_angle > constraint_max or joint_angle < constraint_min:
-                    push_angle = -joint_angle * 2
-                    new_point = rotate(
-                        vec_sub(bones[family.bone_ids[i]].pos, prev_pos),
-                        push_angle,
-                    )
-                    bones[family.bone_ids[i]].pos = vec_add(new_point, prev_pos)
-
             prev_pos = bones[family.bone_ids[i]].pos
 
+        # setting bone rotations
         end_bone = bones[family.bone_ids[-1]].pos
         tip_pos = end_bone
         for i in range(len(family.bone_ids) - 1, -1, -1):
-            if i == len(family.bone_ids) - 1:
-                continue
             dir = vec_sub(tip_pos, bones[family.bone_ids[i]].pos)
             tip_pos = bones[family.bone_ids[i]].pos
-            ik_rots[family.bone_ids[i]] = math.atan2(dir.y, dir.x)
+            bones[family.bone_ids[i]].rot = math.atan2(dir.y, dir.x)
+
+        # applying constraint
+        joint_dir = normalize(vec_sub(bones[family.bone_ids[1]].pos, root))
+        base_dir = normalize(vec_sub(target, root))
+        dir = joint_dir.x * base_dir.y - base_dir.x * joint_dir.y
+        base_angle = math.atan2(base_dir.y, base_dir.x)
+        cw = family.constraint == "Clockwise" and dir > 0
+        ccw = family.constraint == "CounterClockwise" and dir < 0
+        if ccw or cw:
+            for i in family.bone_ids:
+                bones[i].rot = -bones[i].rot + base_angle * 2
+
+        # saving rotations to map
+        for i in range(len(family.bone_ids) - 1):
+            ik_rots[family.bone_ids[i]] = bones[family.bone_ids[i]].rot
 
     return ik_rots
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skelform_python"
-version = "0.1.0.1"
+version = "0.2.0"
 authors = [
   { name="Retropaint", email="darkglasses1122@gmail.com" },
 ]

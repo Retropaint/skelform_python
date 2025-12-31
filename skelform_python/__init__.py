@@ -177,7 +177,7 @@ def inverse_kinematics(bones: list[Bone], ik_root_ids: list[int]):
         if (
             family.ik_target_id == -1
             or not family.ik_bone_ids
-            or not family.ik_target_id
+            or family.ik_target_id == -1
         ):
             continue
 

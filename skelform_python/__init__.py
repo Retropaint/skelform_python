@@ -116,7 +116,34 @@ def animate(
             bone.scale.x = ikf(3, bone.scale.x, bone.init_scale.x, kf, frames[a], id, bf)
             bone.scale.y = ikf(4, bone.scale.y, bone.init_scale.y, kf, frames[a], id, bf)
 
+    for bone in bones:
+        bone = reset_bone(bone, animations, bone.id, frames[0], blend_frames[0])
+
     return bones
+
+
+def is_animated(anims: [Animation], bone_id: int, element: int) -> bool:
+    for anim in anims:
+        for kf in anim.keyframes:
+            if kf.bone_id == bone_id and kf.element == element:
+                return True
+
+    return False
+
+
+def reset_bone(
+    bone: Bone, anims: [Animation], bone_id: int, frame: int, blend_frame: int
+):
+    if not is_animated(anims, bone_id, 0):
+        interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x)
+    if not is_animated(anims, bone_id, 1):
+        interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y)
+    if not is_animated(anims, bone_id, 2):
+        interpolate(frame, blend_frame, bone.rot, bone.init_rot)
+    if not is_animated(anims, bone_id, 3):
+        interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x)
+    if not is_animated(anims, bone_id, 4):
+        interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y)
 
 
 def rotate(point: Vec2, rot: float):

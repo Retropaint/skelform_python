@@ -17,6 +17,8 @@ class Vec2:
         return Vec2(self.x + other.x, self.y + other.y)
 
     def __mul__(self, other):
+        if isinstance(other, float):
+            return Vec2(self.x * other, self.y * other)
         return Vec2(self.x * other.x, self.y * other.y)
 
     def __isub__(self, other):
@@ -30,6 +32,26 @@ class Vec2:
 
 
 @dataclass
+class Vertex:
+    pos: Vec2
+    uv: Vec2
+    init_pos: Vec2
+
+
+@dataclass
+class BoneBindVert:
+    id: int
+    weight: float
+
+
+@dataclass
+class BoneBind:
+    bone_id: int
+    is_path: bool
+    verts: list[BoneBindVert]
+
+
+@dataclass
 class Bone:
     name: str
     id: int
@@ -39,16 +61,18 @@ class Bone:
     rot: float
     scale: Vec2
     pos: Vec2
+    vertices: Optional[list[Vertex]]
+    indices: Optional[list[int]]
+    binds: Optional[list[BoneBind]]
     ik_bone_ids: Optional[list[int]]
-    ik_mode: Optional[int]
-    ik_constraint_str: Optional[str]
-    ik_constraint: Optional[int]
+    ik_mode: Optional[str]
+    ik_constraint: Optional[str]
     ik_family_id: Optional[int]
     ik_target_id: Optional[int]
     init_rot: float
     init_scale: Vec2
     init_pos: Vec2
-    init_ik_constraint: Optional[int]
+    init_ik_constraint: Optional[str]
     zindex: Optional[int] = 0
 
 
@@ -56,8 +80,9 @@ class Bone:
 class Keyframe:
     frame: int
     bone_id: int
-    element: int
+    element: str
     value: float
+    value_str: Optional[str]
 
 
 @dataclass
@@ -110,11 +135,11 @@ def animate(
             bones.append(bone)
             id = bone.id
             # yapf: disable
-            bone.pos.x   = ikf(0, bone.pos.x,   bone.init_pos.x,   kf, frames[a], id, bf)
-            bone.pos.y   = ikf(1, bone.pos.y,   bone.init_pos.y,   kf, frames[a], id, bf)
-            bone.rot     = ikf(2, bone.rot,     bone.init_rot,     kf, frames[a], id, bf)
-            bone.scale.x = ikf(3, bone.scale.x, bone.init_scale.x, kf, frames[a], id, bf)
-            bone.scale.y = ikf(4, bone.scale.y, bone.init_scale.y, kf, frames[a], id, bf)
+            bone.pos.x   = ikf("PositionX", bone.pos.x,   bone.init_pos.x,   kf, frames[a], id, bf)
+            bone.pos.y   = ikf("PositionY", bone.pos.y,   bone.init_pos.y,   kf, frames[a], id, bf)
+            bone.rot     = ikf("Rotation",  bone.rot,     bone.init_rot,     kf, frames[a], id, bf)
+            bone.scale.x = ikf("ScaleX",    bone.scale.x, bone.init_scale.x, kf, frames[a], id, bf)
+            bone.scale.y = ikf("ScaleY",    bone.scale.y, bone.init_scale.y, kf, frames[a], id, bf)
 
     for bone in bones:
         bone = reset_bone(bone, animations, bone.id, frames[0], blend_frames[0])
@@ -122,7 +147,7 @@ def animate(
     return bones
 
 
-def is_animated(anims: [Animation], bone_id: int, element: int) -> bool:
+def is_animated(anims: [Animation], bone_id: int, element: str) -> bool:
     for anim in anims:
         for kf in anim.keyframes:
             if kf.bone_id == bone_id and kf.element == element:
@@ -134,15 +159,15 @@ def is_animated(anims: [Animation], bone_id: int, element: int) -> bool:
 def reset_bone(
     bone: Bone, anims: [Animation], bone_id: int, frame: int, blend_frame: int
 ):
-    if not is_animated(anims, bone_id, 0):
+    if not is_animated(anims, bone_id, "PositionX"):
         interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x)
-    if not is_animated(anims, bone_id, 1):
+    if not is_animated(anims, bone_id, "PositionY"):
         interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y)
-    if not is_animated(anims, bone_id, 2):
+    if not is_animated(anims, bone_id, "Rotation"):
         interpolate(frame, blend_frame, bone.rot, bone.init_rot)
-    if not is_animated(anims, bone_id, 3):
+    if not is_animated(anims, bone_id, "ScaleX"):
         interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x)
-    if not is_animated(anims, bone_id, 4):
+    if not is_animated(anims, bone_id, "ScaleY"):
         interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y)
 
 
@@ -193,7 +218,75 @@ def construct(armature: Armature):
     final_bones = copy.deepcopy(armature.bones)
     final_bones = inheritance(final_bones, ik_rots)
 
+    final_bones = construct_verts(final_bones)
+
     return final_bones
+
+
+def construct_verts(bones: list[Bone]):
+    for b in range(len(bones)):
+        if not bones[b].vertices:
+            continue
+        bone = copy.deepcopy(bones[b])
+
+        for v in range(len(bone.vertices)):
+            bone.vertices[v] = inherit_vert(bone.vertices[v].pos, bone)
+
+        if not bones[b].binds:
+            continue
+
+        for bi in range(len(bones[b].binds)):
+            boneId = bones[b].binds[bi].bone_id
+            if boneId == -1:
+                continue
+            bindBone = {}
+            for bone in bones:
+                if bone.id == boneId:
+                    bindBone = bone
+                    break
+            bind = bones[b].binds[bi]
+            for v in range(len(bind.verts)):
+                id = bind.verts[v].id
+
+                if not bind.is_path:
+                    vert: Vertex = bones[b].vertices[id]
+                    weight: float = bind.verts[v].weight
+                    endpos: Vec2 = inherit_vert(vert.initPos, bindBone) - vert.pos
+                    vert.pos += endPos * weight
+                    continue
+
+                binds = bones[b].binds
+                prev = bi - 1 if bi > 0 else bi
+                next = min(bi + 1, len(binds) - 1)
+                prevBone = {}
+                nextBone = {}
+                for bone in bones:
+                    if bone.id == binds[prev].bone_id:
+                        prevBone = bone
+                    elif bone.id == binds[next].bone_id:
+                        nextBone = bone
+
+                prevDir: Vec2 = bindBone.pos - prevBone.pos
+                nextDir: Vec2 = nextBone.pos - bindBone.pos
+                prevNormal: Vec2 = normalize(Vec2(-prevDir.y, prevDir.x))
+                nextNormal: Vec2 = normalize(Vec2(-nextDir.y, nextDir.x))
+                average: Vec2 = prevNormal + nextNormal
+                normalAngle: float = math.atan2(average.y, average.x)
+
+                vert: Vertex = bones[b].vertices[id]
+                vert.pos = vert.init_pos + bindBone.pos
+                rotated: Vec2 = rotate(vert.pos - bindBone.pos, normalAngle)
+                vert.pos = bindBone.pos + (rotated * bind.verts[v].weight)
+                bones[b].vertices[id] = vert
+
+    return bones
+
+
+def inherit_vert(pos: Vec2, bone: Bone):
+    pos *= bone.scale
+    pos = rotate(pos, bone.rot)
+    pos += bone.pos
+    return pos
 
 
 def inverse_kinematics(bones: list[Bone], ik_root_ids: list[int]):
@@ -211,8 +304,11 @@ def inverse_kinematics(bones: list[Bone], ik_root_ids: list[int]):
         root = copy.deepcopy(bones[family.ik_bone_ids[0]].pos)
         target = copy.deepcopy(bones[family.ik_target_id].pos)
 
-        for i in range(10):
-            fabrik(family, bones, root, target)
+        if family.ik_mode == "FABRIK":
+            for i in range(10):
+                fabrik(family, bones, root, target)
+        else:
+            arc_ik(family, bones, root, target)
 
         # setting bone rotations
         end_bone = bones[family.ik_bone_ids[-1]].pos
@@ -227,8 +323,8 @@ def inverse_kinematics(bones: list[Bone], ik_root_ids: list[int]):
         base_dir = normalize(target - root)
         dir = joint_dir.x * base_dir.y - base_dir.x * joint_dir.y
         base_angle = math.atan2(base_dir.y, base_dir.x)
-        cw = family.ik_constraint == 1 and dir > 0
-        ccw = family.ik_constraint == 2 and dir < 0
+        cw = family.ik_constraint == "Clockwise" and dir > 0
+        ccw = family.ik_constraint == "CounterClockwise" and dir < 0
         if ccw or cw:
             for i in family.ik_bone_ids:
                 bones[i].rot = -bones[i].rot + base_angle * 2
@@ -278,6 +374,35 @@ def fabrik(family, bones, root, target):
         prev_pos = bones[family.ik_bone_ids[i]].pos
 
 
+def arc_ik(family, bones: list[Bone], root: Vec2, target: Vec2):
+    dist = [0.0]
+
+    maxLength: Vec2 = magnitude(
+        bones[family.ik_bone_ids[len(family.ik_bone_ids) - 1]].pos - root
+    )
+    currLength: float = 0.0
+    for b in range(1, len(family.ik_bone_ids), 1):
+        length: float = magnitude(
+            bones[family.ik_bone_ids[b]].pos - bones[family.ik_bone_ids[b - 1]].pos
+        )
+        currLength += length
+        dist.append(currLength / maxLength)
+
+    base: Vec2 = target - root
+    baseAngle: float = math.atan2(base.y, base.x)
+    baseMag: float = min(magnitude(base), maxLength)
+    peak: float = maxLength / baseMag
+    valley: float = baseMag / maxLength
+    for b in range(1, len(family.ik_bone_ids), 1):
+        bones[family.ik_bone_ids[b]].pos = Vec2(
+            bones[family.ik_bone_ids[b]].pos.x * valley,
+            root.y + (1.0 - peak) * math.sin(dist[b] * 3.14) * baseMag,
+        )
+
+        rotated: float = rotate(bones[family.ik_bone_ids[b]].pos - root, baseAngle)
+        bones[family.ik_bone_ids[b]].pos = rotated + root
+
+
 # Flips bone's rotation if either axis of provided scale is negative.
 # Returns new bone rotations
 def check_bone_flip(bone_rot: float, scale: Vec2):
@@ -286,6 +411,14 @@ def check_bone_flip(bone_rot: float, scale: Vec2):
     if either and not both:
         bone_rot = -bone_rot
     return bone_rot
+
+
+def get_bone_texture(bone_tex: str, styles: [Style]):
+    for style in styles:
+        for tex in style.textures:
+            if tex.name == bone_tex:
+                return tex
+    return False
 
 
 # Returns a (bone.id, Texture) map of textures to draw bones with.

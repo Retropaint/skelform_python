@@ -115,6 +115,7 @@ class Atlas:
 @dataclass
 class Armature:
     bones: list[Bone]
+    cached_bones: Optional[list[Bone]]
     ik_root_ids: list[int]
     animations: Optional[list[Animation]]
     atlases: list[Atlas]
@@ -131,7 +132,6 @@ def animate(
         ikf = interpolate_keyframes
 
         for bone in armature.bones:
-            bone = copy.deepcopy(bone)
             bones.append(bone)
             id = bone.id
             # yapf: disable
@@ -178,6 +178,17 @@ def rotate(point: Vec2, rot: float):
     )
 
 
+# Call this before running inheritance.
+def reset_inheritance(bones, og_bones):
+    for b in range(len(bones)):
+        bones[b].pos.x = og_bones[b].pos.x
+        bones[b].pos.y = og_bones[b].pos.y
+        bones[b].rot = og_bones[b].rot
+        bones[b].scale.x = og_bones[b].scale.x
+        bones[b].scale.y = og_bones[b].scale.y
+
+    return bones
+
 def inheritance(bones, ik_rots):
     for bone in bones:
         if bone.parent_id != -1:
@@ -210,27 +221,28 @@ def normalize(vec):
 
 
 def construct(armature: Armature):
-    inh_props = copy.deepcopy(armature.bones)
+    if armature.cached_bones is None:
+        armature.cached_bones = copy.deepcopy(armature.bones)
 
-    inh_props = inheritance(inh_props, {})
-    ik_rots = inverse_kinematics(inh_props, armature.ik_root_ids)
+    armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
+    armature.cached_bones = inheritance(armature.cached_bones, {})
+    ik_rots = inverse_kinematics(armature.cached_bones, armature.ik_root_ids)
 
-    final_bones = copy.deepcopy(armature.bones)
-    final_bones = inheritance(final_bones, ik_rots)
+    armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
+    armature.cached_bones = inheritance(armature.cached_bones, ik_rots)
 
-    final_bones = construct_verts(final_bones)
+    armature.cached_bones = construct_verts(armature.cached_bones)
 
-    return final_bones
+    return armature.cached_bones
 
 
 def construct_verts(bones: list[Bone]):
     for b in range(len(bones)):
         if not bones[b].vertices:
             continue
-        bone = copy.deepcopy(bones[b])
 
-        for v in range(len(bone.vertices)):
-            bone.vertices[v] = inherit_vert(bone.vertices[v].pos, bone)
+        for v in range(len(bones[b].vertices)):
+            bones[b].vertices[v].pos = inherit_vert(bones[b].vertices[v].pos, bones[b])
 
         if not bones[b].binds:
             continue

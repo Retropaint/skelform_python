@@ -15,7 +15,6 @@ class Vec2:
 
     def __add__(self, other):
         return Vec2(self.x + other.x, self.y + other.y)
-
     def __mul__(self, other):
         if isinstance(other, float):
             return Vec2(self.x * other, self.y * other)
@@ -242,6 +241,7 @@ def construct_verts(bones: list[Bone]):
             continue
 
         for v in range(len(bones[b].vertices)):
+            bones[b].vertices[v].pos = bones[b].vertices[v].init_pos
             bones[b].vertices[v].pos = inherit_vert(bones[b].vertices[v].pos, bones[b])
 
         if not bones[b].binds:
@@ -263,8 +263,8 @@ def construct_verts(bones: list[Bone]):
                 if not bind.is_path:
                     vert: Vertex = bones[b].vertices[id]
                     weight: float = bind.verts[v].weight
-                    endpos: Vec2 = inherit_vert(vert.initPos, bindBone) - vert.pos
-                    vert.pos += endPos * weight
+                    endpos: Vec2 = inherit_vert(vert.init_pos, bindBone) - vert.pos
+                    vert.pos += endpos * weight
                     continue
 
                 binds = bones[b].binds

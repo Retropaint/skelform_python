@@ -1,20 +1,25 @@
 import math
 import copy
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
 @dataclass
 class Vec2:
-    x: float
-    y: float
+    x: float = 0
+    y: float = 0
+
+    def clone(self, other):
+        self.x = other.x
+        self.y = other.y
 
     def __sub__(self, other):
         return Vec2(self.x - other.x, self.y - other.y)
 
     def __add__(self, other):
         return Vec2(self.x + other.x, self.y + other.y)
+
     def __mul__(self, other):
         if isinstance(other, float):
             return Vec2(self.x * other, self.y * other)
@@ -68,11 +73,27 @@ class Bone:
     ik_constraint: Optional[str]
     ik_family_id: Optional[int]
     ik_target_id: Optional[int]
+
     init_rot: float
     init_scale: Vec2
     init_pos: Vec2
     init_ik_constraint: Optional[str]
     zindex: Optional[int] = 0
+
+    has_physics: Optional[bool] = False
+    phys_global_pos: Optional[Vec2] = field(default_factory=Vec2)
+    phys_pos_damping: Optional[float] = 0
+    phys_pos_ratio: Optional[float] = 0
+    phys_global_rot: Optional[float] = 0
+    phys_global_orbit: Optional[float] = 0
+    phys_global_orbit_diff: Optional[float] = 0
+    phys_global_orbit_vel: Optional[float] = 0
+    phys_rot_damping: Optional[float] = 0
+    phys_sway: Optional[float] = 0
+    phys_rot_bounce: Optional[float] = 0
+    phys_global_scale: Optional[Vec2] = field(default_factory=Vec2)
+    phys_scale_damping: Optional[float] = 0
+    phys_scale_ratio: Optional[float] = 0
 
 
 @dataclass
@@ -188,22 +209,39 @@ def reset_inheritance(bones, og_bones):
 
     return bones
 
-def inheritance(bones, ik_rots):
-    for bone in bones:
+
+def inheritance(bones, ik_rots, src_bones):
+    for b in range(len(bones)):
+        bone = bones[b]
+
         if bone.parent_id != -1:
             # inherit parent
             parent = bones[bone.parent_id]
 
-            bone.rot += parent.rot
+            orbit_rot = parent.rot
+            # apply orbital difference, if sway is active
+            if len(src_bones) > 0 and bone.phys_sway > 0:
+                orbit_rot -= src_bones[b].phys_global_orbit_diff
+
+            bone.rot += orbit_rot
             bone.scale *= parent.scale
             bone.pos *= parent.scale
 
-            bone.pos = rotate(bone.pos, parent.rot)
+            bone.pos = rotate(bone.pos, orbit_rot)
 
             bone.pos += parent.pos
 
         if bone.id in ik_rots:
             bone.rot = ik_rots[bone.id]
+
+        # apply physics, if armature_bones is provided
+        if len(src_bones) > 0:
+            if bone.phys_rot_damping > 0:
+                bone.rot = src_bones[b].phys_global_rot
+            if bone.phys_pos_damping > 0:
+                bone.pos.clone(src_bones[b].phys_global_pos)
+            if bone.phys_scale_damping > 0:
+                bone.scale = src_bones[b].phys_global_scale
 
     return bones
 
@@ -219,16 +257,116 @@ def normalize(vec):
     return Vec2(vec.x / mag, vec.y / mag)
 
 
+def shortest_angle_delta(fro, to):
+    pi = 3.141592653589793
+    tau = pi * 2.0
+    delta = to - fro
+    while delta > pi:
+        delta -= tau
+    while delta < -pi:
+        delta += tau
+    return delta
+
+
+# simulate physics on the armature, then apply it to constructed bones
+def simulate_physics(armature_bones, constructed_bones):
+    for b in range(len(armature_bones)):
+        s = Vec2(0.3, 0.3)
+        e = Vec2(0.6, 0.6)
+        arm_bone = armature_bones[b]
+        const_bone = constructed_bones[b]
+        prev_pos = Vec2(arm_bone.phys_global_pos.x, arm_bone.phys_global_pos.y)
+
+        # interpolate position
+        if arm_bone.phys_pos_damping > 0.0 or arm_bone.phys_sway > 0.0:
+            phys_pos = arm_bone.phys_global_pos
+            damping = Vec2(arm_bone.phys_pos_damping, arm_bone.phys_pos_damping)
+
+            # ratio
+            if arm_bone.phys_pos_ratio < 0.0:
+                damping.y *= 1.0 - math.abs(arm_bone.phys_pos_ratio)
+            elif arm_bone.phys_pos_ratio > 0.0:
+                damping.x *= 1.0 - arm_bone.phys_pos_ratio
+
+            phys_pos = arm_bone.phys_global_pos = Vec2(
+                interpolate(2.0, damping.x, phys_pos.x, const_bone.pos.x),
+                interpolate(2.0, damping.y, phys_pos.y, const_bone.pos.y),
+            )
+
+        # interpolate scale
+        if arm_bone.phys_scale_damping > 0.0:
+            phys_scale = arm_bone.phys_global_scale
+            damping = Vec2(arm_bone.phys_scale_damping, arm_bone.phys_scale_damping)
+
+            # ratio
+            if arm_bone.phys_scale_ratio < 0:
+                damping.y *= 1.0 - math.abs(arm_bone.phys_scale_ratio)
+            elif arm_bone.phys_scale_ratio > 0.0:
+                damping.x *= 1.0 - arm_bone.phys_scale_ratio
+
+            phys_scale.x = interpolate(
+                2.0, damping.x, phys_scale.x, const_bone.scale.x, s, e
+            )
+            phys_scale.y = interpolate(
+                2.0, damping.y, phys_scale.y, const_bone.scale.y, s, e
+            )
+
+        # interpolate rotation
+        if arm_bone.phys_rot_damping > 0.0:
+            rot = shortest_angle_delta(arm_bone.phys_global_rot, const_bone.rot)
+            arm_bone.phys_global_rot += rot / arm_bone.phys_rot_damping
+
+        # interpolate parent orbit (sway, bounce, etc)
+        parent = None
+        for bone in constructed_bones:
+            if bone.id == const_bone.parent_id:
+                parent = bone
+                break
+        if arm_bone.phys_sway > 0.0 and parent is not None:
+            # interpolate to the angle difference between bone and parent
+            diff = normalize(const_bone.pos - parent.pos)
+            diff_angle = math.atan2(diff.y, diff.x)
+            rest_rot = shortest_angle_delta(arm_bone.phys_global_orbit, diff_angle)
+
+            # apply bounce
+            if arm_bone.phys_rot_bounce > 0.0 and arm_bone.phys_rot_bounce <= 1:
+                bounce = arm_bone.phys_rot_bounce
+                rest_rot += arm_bone.phys_global_orbit_vel / (2.0 - bounce)
+                arm_bone.phys_global_orbit_vel = rest_rot
+            arm_bone.phys_global_orbit += rest_rot / 10.0
+
+            # swing orbit based on position momentum
+            vel = normalize(arm_bone.phys_global_pos - prev_pos)
+            angle = math.atan2(-vel.y, -vel.x)
+            vel_rot = shortest_angle_delta(arm_bone.phys_global_orbit, angle)
+            strength = magnitude(arm_bone.phys_global_pos - prev_pos) / 1000.0
+            arm_bone.phys_global_orbit += vel_rot * strength * arm_bone.phys_sway
+
+            # apply difference in final angle and orbit
+            arm_bone.phys_global_orbit_diff = diff_angle - arm_bone.phys_global_orbit
+
+    return (armature_bones, constructed_bones)
+
+
 def construct(armature: Armature):
     if armature.cached_bones is None:
         armature.cached_bones = copy.deepcopy(armature.bones)
+    else:
+        armature.cached_bones.sort(key=lambda prop: prop.id)
 
     armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
-    armature.cached_bones = inheritance(armature.cached_bones, {})
+    armature.cached_bones = inheritance(armature.cached_bones, {}, {})
     ik_rots = inverse_kinematics(armature.cached_bones, armature.ik_root_ids)
 
     armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
-    armature.cached_bones = inheritance(armature.cached_bones, ik_rots)
+    armature.cached_bones = inheritance(armature.cached_bones, ik_rots, {})
+
+    (armature.bones, armature.cached_bones) = simulate_physics(
+        armature.bones, armature.cached_bones
+    )
+
+    armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
+    armature.cached_bones = inheritance(armature.cached_bones, ik_rots, armature.bones)
 
     armature.cached_bones = construct_verts(armature.cached_bones)
 

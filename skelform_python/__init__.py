@@ -103,6 +103,8 @@ class Keyframe:
     element: str
     value: float
     value_str: Optional[str]
+    start_handle: Vec2
+    end_handle: Vec2
 
 
 @dataclass
@@ -135,7 +137,7 @@ class Atlas:
 @dataclass
 class Armature:
     bones: list[Bone]
-    cached_bones: Optional[list[Bone]]
+    constructed_bones: Optional[list[Bone]]
     ik_root_ids: list[int]
     animations: Optional[list[Animation]]
     atlases: list[Atlas]
@@ -179,16 +181,17 @@ def is_animated(anims: [Animation], bone_id: int, element: str) -> bool:
 def reset_bone(
     bone: Bone, anims: [Animation], bone_id: int, frame: int, blend_frame: int
 ):
+    z = Vec2(0, 0)
     if not is_animated(anims, bone_id, "PositionX"):
-        interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x)
+        interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x, z, z)
     if not is_animated(anims, bone_id, "PositionY"):
-        interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y)
+        interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y, z, z)
     if not is_animated(anims, bone_id, "Rotation"):
-        interpolate(frame, blend_frame, bone.rot, bone.init_rot)
+        interpolate(frame, blend_frame, bone.rot, bone.init_rot, z, z)
     if not is_animated(anims, bone_id, "ScaleX"):
-        interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x)
+        interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x, z, z)
     if not is_animated(anims, bone_id, "ScaleY"):
-        interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y)
+        interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y, z, z)
 
 
 def rotate(point: Vec2, rot: float):
@@ -289,8 +292,8 @@ def simulate_physics(armature_bones, constructed_bones):
                 damping.x *= 1.0 - arm_bone.phys_pos_ratio
 
             phys_pos = arm_bone.phys_global_pos = Vec2(
-                interpolate(2.0, damping.x, phys_pos.x, const_bone.pos.x),
-                interpolate(2.0, damping.y, phys_pos.y, const_bone.pos.y),
+                interpolate(2.0, damping.x, phys_pos.x, const_bone.pos.x, s, e),
+                interpolate(2.0, damping.y, phys_pos.y, const_bone.pos.y, s, e),
             )
 
         # interpolate scale
@@ -349,28 +352,36 @@ def simulate_physics(armature_bones, constructed_bones):
 
 
 def construct(armature: Armature):
-    if armature.cached_bones is None:
-        armature.cached_bones = copy.deepcopy(armature.bones)
+    if armature.constructed_bones is None:
+        armature.constructed_bones = copy.deepcopy(armature.bones)
     else:
-        armature.cached_bones.sort(key=lambda prop: prop.id)
+        armature.constructed_bones.sort(key=lambda prop: prop.id)
 
-    armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
-    armature.cached_bones = inheritance(armature.cached_bones, {}, {})
-    ik_rots = inverse_kinematics(armature.cached_bones, armature.ik_root_ids)
+    armature.constructed_bones = reset_inheritance(
+        armature.constructed_bones, armature.bones
+    )
+    armature.constructed_bones = inheritance(armature.constructed_bones, {}, {})
+    ik_rots = inverse_kinematics(armature.constructed_bones, armature.ik_root_ids)
 
-    armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
-    armature.cached_bones = inheritance(armature.cached_bones, ik_rots, {})
+    armature.constructed_bones = reset_inheritance(
+        armature.constructed_bones, armature.bones
+    )
+    armature.constructed_bones = inheritance(armature.constructed_bones, ik_rots, {})
 
-    (armature.bones, armature.cached_bones) = simulate_physics(
-        armature.bones, armature.cached_bones
+    (armature.bones, armature.constructed_bones) = simulate_physics(
+        armature.bones, armature.constructed_bones
     )
 
-    armature.cached_bones = reset_inheritance(armature.cached_bones, armature.bones)
-    armature.cached_bones = inheritance(armature.cached_bones, ik_rots, armature.bones)
+    armature.constructed_bones = reset_inheritance(
+        armature.constructed_bones, armature.bones
+    )
+    armature.constructed_bones = inheritance(
+        armature.constructed_bones, ik_rots, armature.bones
+    )
 
-    armature.cached_bones = construct_verts(armature.cached_bones)
+    armature.constructed_bones = construct_verts(armature.constructed_bones)
 
-    return armature.cached_bones
+    return armature.constructed_bones
 
 
 def construct_verts(bones: list[Bone]):
@@ -594,6 +605,7 @@ def setup_bone_textures(bones: [Bone], styles: [Style]):
 def interpolate_keyframes(
     element, field, default, keyframes, frame, bone_id, blend_frames
 ):
+    z = Vec2(0, 0)
     prev_kf = {}
     next_kf = {}
 
@@ -612,23 +624,64 @@ def interpolate_keyframes(
         next_kf = prev_kf
 
     if prev_kf == {} and next_kf == {}:
-        return interpolate(frame, blend_frames, field, default)
+        return interpolate(frame, blend_frames, field, default, z, z)
 
     total_frames = next_kf.frame - prev_kf.frame
     current_frame = frame - prev_kf.frame
 
-    result = interpolate(current_frame, total_frames, prev_kf.value, next_kf.value)
-    blend = interpolate(current_frame, blend_frames, field, result)
+    result = interpolate(
+        current_frame,
+        total_frames,
+        prev_kf.value,
+        next_kf.value,
+        next_kf.start_handle,
+        next_kf.end_handle,
+    )
+    blend = interpolate(current_frame, blend_frames, field, result, z, z)
 
     return blend
 
 
-def interpolate(current, max, start_val, end_val):
-    if current > max or max == 0:
+def interpolate(
+    current,
+    max,
+    start_val,
+    end_val,
+    start_handle,
+    end_handle,
+):
+    # snapping behavior for None transition preset
+    if start_handle.y == 999.0 and end_handle.y == 999:
+        return start_val
+    if max == 0 or current >= max:
         return end_val
-    interp = current / max
-    end = end_val - start_val
-    return start_val + (end * interp)
+
+    # solve for time (x axis) with Newton-Raphson
+    initial = current / max
+    t = initial
+    for _ in range(5):
+        x = cubic_bezier(t, start_handle.x, end_handle.x)
+        dx = cubic_bezier_derivative(t, start_handle.x, end_handle.x)
+        if abs(dx) < 1e-5:
+            break
+        t -= (x - initial) / dx
+        if t > 1:
+            t = 1
+        elif t < 0:
+            t = 0
+
+    progress = cubic_bezier(t, start_handle.y, end_handle.y)
+    return start_val + (end_val - start_val) * progress
+
+
+def cubic_bezier(t, p1, p2):
+    u = 1.0 - t
+    return 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t
+
+
+def cubic_bezier_derivative(t, p1, p2):
+    u = 1.0 - t
+    return 3.0 * u * u * p1 + 6.0 * u * t * (p2 - p1) + 3.0 * t * t * (1.0 - p2)
 
 
 def format_frame(frame, animation: Animation, reverse, loop):

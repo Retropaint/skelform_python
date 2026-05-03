@@ -191,8 +191,10 @@ def animate(
                 resetMap[kf.bone_id].append(kf.element)
 
     z = Vec2(0, 0)
-    for bone_id in resetMap:
-        reset = resetMap[bone_id]
+    for bone in armature.bones:
+        reset = []
+        if resetMap.get(kf.bone_id):
+            reset = resetMap[kf.bone_id]
         if "PositionX" not in reset:
             interpolate(frames[0], sf[0], bone.pos.x, bone.init_pos.x, z, z)
         if "PositionY" not in reset:

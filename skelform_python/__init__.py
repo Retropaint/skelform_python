@@ -105,6 +105,7 @@ class Keyframe:
     value_str: Optional[str]
     start_handle: Vec2
     end_handle: Vec2
+    next_kf: Optional[int] = -1
 
 
 @dataclass
@@ -145,53 +146,65 @@ class Armature:
 
 
 def animate(
-    armature: Armature, animations: [Animation], frames: [int], blend_frames: [int]
+    armature: Armature, animations: [Animation], frames: [int], smooth_frames: [int]
 ):
-    bones = []
+    resetMap = {}
+    sf = smooth_frames
     for a in range(len(animations)):
-        kf = animations[a].keyframes
-        bf = blend_frames[a]
-        ikf = interpolate_keyframes
+        keyframes = animations[a].keyframes
+        for k in range(len(keyframes)):
+            if keyframes[k].frame > frames[a]:
+                continue
 
-        for bone in armature.bones:
-            bones.append(bone)
-            id = bone.id
-            # yapf: disable
-            bone.pos.x   = ikf("PositionX", bone.pos.x,   bone.init_pos.x,   kf, frames[a], id, bf)
-            bone.pos.y   = ikf("PositionY", bone.pos.y,   bone.init_pos.y,   kf, frames[a], id, bf)
-            bone.rot     = ikf("Rotation",  bone.rot,     bone.init_rot,     kf, frames[a], id, bf)
-            bone.scale.x = ikf("ScaleX",    bone.scale.x, bone.init_scale.x, kf, frames[a], id, bf)
-            bone.scale.y = ikf("ScaleY",    bone.scale.y, bone.init_scale.y, kf, frames[a], id, bf)
+            kf = keyframes[k]
 
-    for bone in bones:
-        bone = reset_bone(bone, animations, bone.id, frames[0], blend_frames[0])
+            if kf.next_kf == -1:
+                kf.next_kf = k
+            nextKf = animations[a].keyframes[kf.next_kf]
 
-    return bones
+            # this is a redundant keyframe if the next one is also before this frame
+            if nextKf.frame < frames[a] and kf.next_kf != k:
+                continue
 
+            bone = armature.bones[kf.bone_id]
 
-def is_animated(anims: [Animation], bone_id: int, element: str) -> bool:
-    for anim in anims:
-        for kf in anim.keyframes:
-            if kf.bone_id == bone_id and kf.element == element:
-                return True
+            c1 = kf.element[0]
+            c2 = kf.element[len(kf.element) - 1]
+            intkf = interpolate_keyframes
+            if c1 == "P" and c2 == "X":
+                bone.pos.x = intkf(bone.pos.x, kf, nextKf, frames[a], sf[a])
+            if c1 == "P" and c2 == "Y":
+                bone.pos.y = intkf(bone.pos.y, kf, nextKf, frames[a], sf[a])
+            if c1 == "R" and c2 == "n":
+                bone.rot = intkf(bone.rot, kf, nextKf, frames[a], sf[a])
+            if c1 == "S" and c2 == "X":
+                bone.scale.x = intkf(bone.scale.x, kf, nextKf, frames[a], sf[a])
+            if c1 == "S" and c2 == "Y":
+                bone.scale.y = intkf(bone.scale.y, kf, nextKf, frames[a], sf[a])
+            if c1 == "H" and c2 == "n":
+                bone.hidden = kf.value == 1
 
-    return False
+            kf = keyframes[k]
+            if not resetMap.get(kf.bone_id):
+                resetMap[kf.bone_id] = []
+            if not resetMap.get(kf.bone_id) or kf.element not in resetMap[kf.bone_id]:
+                resetMap[kf.bone_id].append(kf.element)
 
-
-def reset_bone(
-    bone: Bone, anims: [Animation], bone_id: int, frame: int, blend_frame: int
-):
     z = Vec2(0, 0)
-    if not is_animated(anims, bone_id, "PositionX"):
-        interpolate(frame, blend_frame, bone.pos.x, bone.init_pos.x, z, z)
-    if not is_animated(anims, bone_id, "PositionY"):
-        interpolate(frame, blend_frame, bone.pos.y, bone.init_pos.y, z, z)
-    if not is_animated(anims, bone_id, "Rotation"):
-        interpolate(frame, blend_frame, bone.rot, bone.init_rot, z, z)
-    if not is_animated(anims, bone_id, "ScaleX"):
-        interpolate(frame, blend_frame, bone.scale.x, bone.init_scale.x, z, z)
-    if not is_animated(anims, bone_id, "ScaleY"):
-        interpolate(frame, blend_frame, bone.scale.y, bone.init_scale.y, z, z)
+    for bone_id in resetMap:
+        reset = resetMap[bone_id]
+        if "PositionX" not in reset:
+            interpolate(frames[0], sf[0], bone.pos.x, bone.init_pos.x, z, z)
+        if "PositionY" not in reset:
+            interpolate(frames[0], sf[0], bone.pos.y, bone.init_pos.y, z, z)
+        if "Rotation" not in reset:
+            interpolate(frames[0], sf[0], bone.rot, bone.init_rot, z, z)
+        if "ScaleX" not in reset:
+            interpolate(frames[0], sf[0], bone.init_scale.x, bone.init_scale.x, z, z)
+        if "ScaleY" not in reset:
+            interpolate(frames[0], sf[0], bone.init_scale.y, bone.init_scale.y, z, z)
+
+    return armature.bones
 
 
 def rotate(point: Vec2, rot: float):
@@ -602,44 +615,20 @@ def setup_bone_textures(bones: [Bone], styles: [Style]):
     return final_textures
 
 
-def interpolate_keyframes(
-    element, field, default, keyframes, frame, bone_id, blend_frames
-):
-    z = Vec2(0, 0)
-    prev_kf = {}
-    next_kf = {}
-
-    for kf in keyframes:
-        if kf.frame < frame and kf.bone_id == bone_id and kf.element == element:
-            prev_kf = kf
-
-    for kf in keyframes:
-        if kf.frame >= frame and kf.bone_id == bone_id and kf.element == element:
-            next_kf = kf
-            break
-
-    if prev_kf == {}:
-        prev_kf = next_kf
-    elif next_kf == {}:
-        next_kf = prev_kf
-
-    if prev_kf == {} and next_kf == {}:
-        return interpolate(frame, blend_frames, field, default, z, z)
-
-    total_frames = next_kf.frame - prev_kf.frame
-    current_frame = frame - prev_kf.frame
-
+def interpolate_keyframes(field, prev_kf, next_kf, frame, smooth_frame):
+    totalFrames = next_kf.frame - prev_kf.frame
+    currentFrame = frame - prev_kf.frame
     result = interpolate(
-        current_frame,
-        total_frames,
+        currentFrame,
+        totalFrames,
         prev_kf.value,
         next_kf.value,
         next_kf.start_handle,
         next_kf.end_handle,
     )
-    blend = interpolate(current_frame, blend_frames, field, result, z, z)
-
-    return blend
+    return interpolate(
+        currentFrame, smooth_frame, field, result, Vec2(0, 0), Vec2(0, 0)
+    )
 
 
 def interpolate(

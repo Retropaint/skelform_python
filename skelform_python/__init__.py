@@ -153,6 +153,13 @@ def animate(
     for a in range(len(animations)):
         keyframes = animations[a].keyframes
         for k in range(len(keyframes)):
+            kf = keyframes[k]
+
+            if not resetMap.get(kf.bone_id):
+                resetMap[kf.bone_id] = []
+            if kf.element not in resetMap[kf.bone_id]:
+                resetMap[kf.bone_id].append(kf.element)
+
             if keyframes[k].frame > frames[a]:
                 continue
 
@@ -184,27 +191,30 @@ def animate(
             if c1 == "H" and c2 == "n":
                 bone.hidden = kf.value == 1
 
-            kf = keyframes[k]
-            if not resetMap.get(kf.bone_id):
-                resetMap[kf.bone_id] = []
-            if not resetMap.get(kf.bone_id) or kf.element not in resetMap[kf.bone_id]:
-                resetMap[kf.bone_id].append(kf.element)
-
     z = Vec2(0, 0)
     for bone in armature.bones:
         reset = []
-        if resetMap.get(kf.bone_id):
-            reset = resetMap[kf.bone_id]
+        if resetMap.get(bone.id):
+            reset = resetMap[bone.id]
+
         if "PositionX" not in reset:
-            interpolate(frames[0], sf[0], bone.pos.x, bone.init_pos.x, z, z)
+            bone.pos.x = interpolate(
+                frames[0], sf[0], bone.pos.x, bone.init_pos.x, z, z
+            )
         if "PositionY" not in reset:
-            interpolate(frames[0], sf[0], bone.pos.y, bone.init_pos.y, z, z)
+            bone.pos.y = interpolate(
+                frames[0], sf[0], bone.pos.y, bone.init_pos.y, z, z
+            )
         if "Rotation" not in reset:
-            interpolate(frames[0], sf[0], bone.rot, bone.init_rot, z, z)
+            bone.rot = interpolate(frames[0], sf[0], bone.rot, bone.init_rot, z, z)
         if "ScaleX" not in reset:
-            interpolate(frames[0], sf[0], bone.init_scale.x, bone.init_scale.x, z, z)
+            bone.scale.x = interpolate(
+                frames[0], sf[0], bone.scale.x, bone.init_scale.x, z, z
+            )
         if "ScaleY" not in reset:
-            interpolate(frames[0], sf[0], bone.init_scale.y, bone.init_scale.y, z, z)
+            bone.scale.y = interpolate(
+                frames[0], sf[0], bone.scale.y, bone.init_scale.y, z, z
+            )
 
     return armature.bones
 
@@ -306,7 +316,7 @@ def simulate_physics(armature_bones, constructed_bones):
             elif arm_bone.phys_pos_ratio > 0.0:
                 damping.x *= 1.0 - arm_bone.phys_pos_ratio
 
-            phys_pos = arm_bone.phys_global_pos = Vec2(
+            phys_pos = Vec2(
                 interpolate(2.0, damping.x, phys_pos.x, const_bone.pos.x, s, e),
                 interpolate(2.0, damping.y, phys_pos.y, const_bone.pos.y, s, e),
             )

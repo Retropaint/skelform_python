@@ -339,7 +339,6 @@ def simulate_physics(constructed_bones: list[Bone], physics: list[Physics]):
 
         # interpolate position
         if phys.pos_damping > 0.0 or phys.sway > 0.0:
-            phys_pos = phys.global_pos
             damping = Vec2(phys.pos_damping, phys.pos_damping)
 
             # ratio
@@ -348,9 +347,9 @@ def simulate_physics(constructed_bones: list[Bone], physics: list[Physics]):
             elif phys.pos_ratio > 0.0:
                 damping.x *= 1.0 - phys.pos_ratio
 
-            phys_pos = Vec2(
-                interpolate(2.0, damping.x, phys_pos.x, const_bone.pos.x, s, e),
-                interpolate(2.0, damping.y, phys_pos.y, const_bone.pos.y, s, e),
+            phys.global_pos = Vec2(
+                interpolate(2.0, damping.x, phys.global_pos.x, const_bone.pos.x, s, e),
+                interpolate(2.0, damping.y, phys.global_pos.y, const_bone.pos.y, s, e),
             )
 
         # interpolate scale

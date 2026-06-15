@@ -408,35 +408,44 @@ def simulate_physics(constructed_bones: list[Bone], physics: list[Physics]):
 
 
 def construct(armature: Armature):
+    # initialize constructed_bones, or sort by ID
     if armature.constructed_bones is None:
         armature.constructed_bones = copy.deepcopy(armature.bones)
     else:
         armature.constructed_bones.sort(key=lambda prop: prop.id)
 
+    # 1st inheritance pass
     armature.constructed_bones = reset_inheritance(
         armature.constructed_bones, armature.bones
     )
     armature.constructed_bones = inheritance(armature.constructed_bones, {}, [])
-    ik_rots = inverse_kinematics(
-        armature.constructed_bones, armature.inverse_kinematics
-    )
 
-    armature.constructed_bones = reset_inheritance(
-        armature.constructed_bones, armature.bones
-    )
-    armature.constructed_bones = inheritance(armature.constructed_bones, ik_rots, [])
+    # 2nd inheritance pass: inverse kinematics
+    ik_rots = {}
+    if len(armature.inverse_kinematics) > 0:
+        ik_rots = inverse_kinematics(
+            armature.constructed_bones, armature.inverse_kinematics
+        )
+        armature.constructed_bones = reset_inheritance(
+            armature.constructed_bones, armature.bones
+        )
+        armature.constructed_bones = inheritance(
+            armature.constructed_bones, ik_rots, []
+        )
 
-    (armature.constructed_bones, armature.physics) = simulate_physics(
-        armature.constructed_bones, armature.physics
-    )
+    # 3rd inheritance pass: physics
+    if len(armature.physics) > 0:
+        (armature.constructed_bones, armature.physics) = simulate_physics(
+            armature.constructed_bones, armature.physics
+        )
+        armature.constructed_bones = reset_inheritance(
+            armature.constructed_bones, armature.bones
+        )
+        armature.constructed_bones = inheritance(
+            armature.constructed_bones, ik_rots, armature.physics
+        )
 
-    armature.constructed_bones = reset_inheritance(
-        armature.constructed_bones, armature.bones
-    )
-    armature.constructed_bones = inheritance(
-        armature.constructed_bones, ik_rots, armature.physics
-    )
-
+    # mesh deformation
     armature.constructed_bones = construct_verts(
         armature.constructed_bones, armature.visuals
     )

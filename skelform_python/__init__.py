@@ -653,26 +653,6 @@ def get_bone_texture(bone_tex: str, styles: [Style]):
     return False
 
 
-# Returns a (bone.id, Texture) map of textures to draw bones with.
-def setup_bone_textures(bones: [Bone], styles: [Style]):
-    final_textures = {}
-    for bone in bones:
-        for style in styles:
-            if bone.tex is None:
-                continue
-            final_tex = {}
-            has_final = False
-            for tex in style.textures:
-                if tex.name == bone.tex:
-                    final_tex = tex
-                    has_final = True
-                    break
-            if has_final:
-                final_textures[bone.id] = final_tex
-
-    return final_textures
-
-
 def interpolate_keyframes(field, prev_kf, next_kf, frame, smooth_frame):
     totalFrames = next_kf.frame - prev_kf.frame
     currentFrame = frame - prev_kf.frame

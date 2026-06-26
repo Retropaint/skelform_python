@@ -63,6 +63,9 @@ class Visuals:
     indices: Optional[list[int]]
     binds: Optional[list[BoneBind]]
     zindex: int
+    pivot_pos: Optional[Vec2]
+    pivot_rot: Optional[float]
+    pivot_scale: Vec2
 
     init_tex: str
     init_zindex: Optional[int]
@@ -200,20 +203,18 @@ def animate(
 
             bone: Bone = armature.bones[kf.bone_id]
 
-            c1 = kf.element[0]
-            c2 = kf.element[len(kf.element) - 1]
             intkf = interpolate_keyframes
-            if c1 == "P" and c2 == "X":
+            if kf.element == "PositionX":
                 bone.pos.x = intkf(bone.pos.x, kf, nextKf, frames[a], sf[a])
-            if c1 == "P" and c2 == "Y":
+            if kf.element == "PositionY":
                 bone.pos.y = intkf(bone.pos.y, kf, nextKf, frames[a], sf[a])
-            if c1 == "R" and c2 == "n":
+            if kf.element == "Rotation":
                 bone.rot = intkf(bone.rot, kf, nextKf, frames[a], sf[a])
-            if c1 == "S" and c2 == "X":
+            if kf.element == "ScaleX":
                 bone.scale.x = intkf(bone.scale.x, kf, nextKf, frames[a], sf[a])
-            if c1 == "S" and c2 == "Y":
+            if kf.element == "ScaleY":
                 bone.scale.y = intkf(bone.scale.y, kf, nextKf, frames[a], sf[a])
-            if c1 == "H" and c2 == "n":
+            if kf.element == "Hidden":
                 bone.hidden = kf.value == 1
 
     z = Vec2(0, 0)
@@ -244,7 +245,7 @@ def animate(
     return armature.bones
 
 
-def rotate(point: Vec2, rot: float):
+def rotate_vec2(point: Vec2, rot: float):
     return Vec2(
         point.x * math.cos(rot) - point.y * math.sin(rot),
         point.x * math.sin(rot) + point.y * math.cos(rot),
@@ -282,7 +283,7 @@ def inheritance(bones, ik_rots, physics):
             bone.scale *= parent.scale
             bone.pos *= parent.scale
 
-            bone.pos = rotate(bone.pos, orbit_rot)
+            bone.pos = rotate_vec2(bone.pos, orbit_rot)
 
             bone.pos += parent.pos
 
@@ -464,7 +465,9 @@ def construct_verts(bones: list[Bone], visuals: list[Visuals]):
 
         for v in range(len(visual.vertices)):
             visual.vertices[v].pos = visual.vertices[v].init_pos
-            visual.vertices[v].pos = inherit_vert(visual.vertices[v].pos, bones[b])
+            visual.vertices[v].pos = inherit_vert(
+                visual.vertices[v].pos, bones[b], visual
+            )
 
         if not visual.binds:
             continue
@@ -485,7 +488,9 @@ def construct_verts(bones: list[Bone], visuals: list[Visuals]):
                 if not bind.is_path:
                     vert: Vertex = visual.vertices[id]
                     weight: float = bind.verts[v].weight
-                    endpos: Vec2 = inherit_vert(vert.init_pos, bindBone) - vert.pos
+                    endpos: Vec2 = (
+                        inherit_vert(vert.init_pos, bindBone, visual) - vert.pos
+                    )
                     vert.pos += endpos * weight
                     continue
 
@@ -509,16 +514,16 @@ def construct_verts(bones: list[Bone], visuals: list[Visuals]):
 
                 vert = visual.vertices[id]
                 vert.pos = vert.init_pos + bindBone.pos
-                rotated: Vec2 = rotate(vert.pos - bindBone.pos, normalAngle)
+                rotated: Vec2 = rotate_vec2(vert.pos - bindBone.pos, normalAngle)
                 vert.pos = bindBone.pos + (rotated * bind.verts[v].weight)
                 visual.vertices[id] = vert
 
     return bones
 
 
-def inherit_vert(pos: Vec2, bone: Bone):
-    pos *= bone.scale
-    pos = rotate(pos, bone.rot)
+def inherit_vert(pos: Vec2, bone: Bone, visual: Visuals):
+    pos *= bone.scale * visual.pivot_scale
+    pos = rotate_vec2(pos, bone.rot + visual.pivot_rot)
     pos += bone.pos
     return pos
 
@@ -631,18 +636,15 @@ def arc_ik(family: InverseKinematics, bones: list[Bone], root: Vec2, target: Vec
             root.y + (1.0 - peak) * math.sin(dist[b] * 3.14) * baseMag,
         )
 
-        rotated: float = rotate(bones[family.bone_ids[b]].pos - root, baseAngle)
+        rotated: float = rotate_vec2(bones[family.bone_ids[b]].pos - root, baseAngle)
         bones[family.bone_ids[b]].pos = rotated + root
 
 
-# Flips bone's rotation if either axis of provided scale is negative.
-# Returns new bone rotations
-def check_bone_flip(bone_rot: float, scale: Vec2):
+# Returns true if either X or Y scale is negative.
+def is_facing_left(scale: Vec2):
     either = scale.x < 0 or scale.y < 0
     both = scale.x < 0 and scale.y < 0
-    if either and not both:
-        bone_rot = -bone_rot
-    return bone_rot
+    return either and not both
 
 
 def get_bone_texture(bone_tex: str, styles: [Style]):
